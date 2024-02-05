@@ -8,6 +8,9 @@ from .models import Turnover
 from .serializer import TurnoverSerializer, TurnoverCategoryChartSerializer, TurnoverLineChartSerializer
 
 class TurnoverViewSet(viewsets.ModelViewSet):
+    '''Retorna os dados para o gráfico de linha e categoria
+    -
+    Retorna todos os registros da tabela turnover pelo endpoint /turnover/'''
     queryset = Turnover.objects.all()
     serializer_class = TurnoverSerializer
     http_method_names = ['get']
