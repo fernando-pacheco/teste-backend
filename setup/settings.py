@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'headcount',
     'turnover',
-    'management'
+    'management',
+    'rest_framework',
 ]
 
 MIDDLEWARE = [
