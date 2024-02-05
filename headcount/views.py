@@ -3,7 +3,7 @@ from django.db.models.functions import ExtractYear, ExtractMonth
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .serializer import HeadcountSerializer
+from .serializer import HeadcountSerializer, HeadcountLineChartSerializer, HeadcountCategoryChartSerializer
 from .models import Headcount
 
 class HeadcountViewSet(viewsets.ModelViewSet):
@@ -16,41 +16,39 @@ class HeadcountViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='line_chart')
     def line_chart(self, request):
-        '''Retorna um JSON com os dados para o gráfico de linha
+        '''Retorna um JSON com os dados para o gráfico de linha
         -
         endpoint /headcount/line_chart
-        - Como parâmetro de entrada:
-           - init_date: data inicial da base
-           - end_date: data final da base
+        - Como parâmetro de entrada:
+        - init_date: data inicial da base
+        - end_date: data final da base
         '''
-        # Pega todos os registros com fg_status igual a 1
-        queryset = Headcount.objects.filter(fg_status=1)
+        # Instancia o serializer com os parâmetros de entrada
+        serializer = HeadcountLineChartSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)  # Verificação necessária, caso contrário, o código quebra
 
-        # Cria os dados para o gráfico separando por ano, mês e contagem
-        data = queryset.annotate(
+        # Receber os parâmetros da URL /?init_date=yyyy-mm-dd&end_date=yyyy-mm-dd
+        init_date = serializer.validated_data['init_date']
+        end_date = serializer.validated_data['end_date']
+
+        # Cria os dados para o gráfico separando por ano, mês e contagem
+        data = Headcount.objects.filter(
+            dt_reference_month__range=[init_date, end_date],
+            fg_status=1
+        ).annotate(
             year=ExtractYear('dt_reference_month'),
             month=ExtractMonth('dt_reference_month'),
         ).values('year', 'month').annotate(
-            headcount=Count('id_employee', filter=F('fg_status') == 1),
-        ).values('year', 'month', 'headcount')
+            count=Count('id_employee')
+        ).values('year', 'month', 'count')
 
         # Serializa o retorno dos dados
         response_data = {
             "xAxis": {
                 "type": "category",
                 "data": [
-                    "Jan",
-                    "Feb",
-                    "Mar",
-                    "Apr",
-                    "May",
-                    "Jun",
-                    "Jul",
-                    "Aug",
-                    "Sep",
-                    "Oct",
-                    "Nov",
-                    "Dec"
+                    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
                 ]
             },
             "yAxis": {
@@ -68,15 +66,15 @@ class HeadcountViewSet(viewsets.ModelViewSet):
             ]
         }
 
-        # Separando os dados por ano e inserindo na serie
+        # Separando os dados por ano e inserindo na série
         for entrada in data:
             year = entrada['year']
-            count = entrada['headcount']
+            count = entrada['count']
 
-            # Encontra e agrupa os valores na serie para o ano escolhido, se não houver -> None
+            # Encontra e agrupa os valores na série para o ano escolhido, se não houver -> None
             series_data = next((s for s in response_data['series']['series'] if s['name'] == str(year)), None)
 
-            # Cria uma nova serie['data'] com 12 elementos nulos se não houver e adiciona a serie
+            # Cria uma nova série['data'] com 12 elementos iniciais nulos se não houver e adiciona a série
             if series_data is None:
                 series_data = {
                     "name": str(year),
@@ -85,12 +83,14 @@ class HeadcountViewSet(viewsets.ModelViewSet):
                 }
                 response_data['series']['series'].append(series_data)
 
-            # Adiciona o valor na serie correspondente ao mês
+            # Adiciona o valor na série correspondente ao mês
             series_data['data'][entrada['month'] - 1] = count
 
         return Response(response_data, status=status.HTTP_200_OK)
+
+
     
-    @action(detail=False, methods=['get'], url_path='category_charts')
+    @action(detail=False, methods=['get'], url_path='category_chart')
     def category_charts(self, request):
         '''Retorna um JSON com os dados para o gráfico de categoria
         -
@@ -100,16 +100,22 @@ class HeadcountViewSet(viewsets.ModelViewSet):
            - end_date: data final da base
            - category_1: Empresa
         '''
-        # Pega todos os registros com fg_status igual a 1
-        queryset = Headcount.objects.filter(fg_status=1)
+        # Instancia o serializer com os parâmetros de entrada
+        serializer = HeadcountCategoryChartSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True) # verificação necessária, caso contrário o código quebra
+
+        # Receber os parâmetros da URL /?init_date=yyyy-mm-dd&end_date=yyyy-mm-dd&category=ds_category_x
+        init_date = serializer.validated_data['init_date']
+        end_date = serializer.validated_data['end_date']
+        category = serializer.validated_data['category']
         
         # Cria os dados para o gráfico separando por ano, empresa e contagem
-        data = queryset.annotate(
-            year=ExtractYear('dt_reference_month'),
-            month=ExtractMonth('dt_reference_month'),
-        ).values('year', 'ds_category_1').annotate(
-            count=Count('id_employee', filter=F('fg_status') == 1),
-        ).values('year', 'ds_category_1', 'count')
+        data = Headcount.objects.filter(
+            dt_reference_month__range=[init_date, end_date],
+            fg_status=1
+        ).values('ds_category_1').annotate(
+            count=Count('id_employee', filter=F('fg_status') == 1)
+        ).values('ds_category_1', 'count').order_by('-count')
 
         # Serializa o retorno dos dados
         response_data = {
